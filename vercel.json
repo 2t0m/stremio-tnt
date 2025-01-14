@@ -7,9 +7,9 @@
     }
   ],
   "routes": [
-    {
-      "src": "/manifest.json",
-      "dest": "/"
-    }
+    { "src": "/manifest.json", "dest": "/index.js" },
+    { "src": "/catalog/(.*)", "dest": "/index.js" },
+    { "src": "/meta/(.*)", "dest": "/index.js" },
+    { "src": "/stream/(.*)", "dest": "/index.js" }
   ]
 }
