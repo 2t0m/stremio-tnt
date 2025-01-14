@@ -162,15 +162,10 @@ addon.defineStreamHandler(async (args) => {
 
 // Route pour le manifest
 app.get('/manifest.json', (req, res) => {
-    try {
-        const manifest = addon.getInterface();
-        console.log("Manifest created successfully.");
-        res.setHeader('Content-Type', 'application/json');
-        res.json(manifest);
-    } catch (error) {
-        console.error("Error generating manifest:", error);
-        res.status(500).send({ error: "Internal Server Error" });
-    }
+    const manifest = addon.getInterface();
+    console.log(manifest); // Pour voir ce qui est retourné
+    res.setHeader('Content-Type', 'application/json');
+    res.json(manifest);
 });
 
 // Serve Add-on on Port 3000
