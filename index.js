@@ -18,10 +18,10 @@ app.use(express.json());
 
 // Addon Manifest
 const addon = new addonBuilder({
-    id: 'org.iptv',
-    name: 'IPTV Addon',
-    version: '0.0.1',
-    description: 'Watch live TV from selected countries and languages',
+    id: 'stremio-tnt.fr',
+    name: 'TNT Française',
+    version: '0.0.2',
+    description: 'Chaînes de la TNT Française (https://github.com/schumijo/iptv/blob/main/fr.m3u8)',
     resources: ['catalog', 'meta', 'stream'],
     types: ['tv'],
     catalogs: [{
@@ -75,11 +75,16 @@ async function extractChannelsFromM3U() {
                 url: channelUrl,
                 logo: `https://raw.githubusercontent.com/tv-logo/tv-logos/main/countries/france/${channelName.toLowerCase().replace(/\s+/g, '-')}-fr.png`,
             };
+
+            // Limiter le nombre de chaînes à 30
+            if (channels.length >= 30) {
+                break;
+            }
         }
     }
 
     // Ajouter la dernière chaîne si elle existe
-    if (currentChannel) {
+    if (currentChannel && channels.length < 30) {
         channels.push(currentChannel);
     }
 
@@ -160,12 +165,18 @@ addon.defineStreamHandler(async (args) => {
         const channel = channels.find(c => c.id === channelID);
         if (channel) {
             const variants = await fetchVariants(channel.url);
-            const streams = variants.map((variant) => ({
-                title: `${channel.name} (${variant.info})`,
-                url: variant.url,
-                quality: 'HD',
-                isM3U8: true,
-            }));
+            const streams = variants.map((variant) => {
+                // Extraire la résolution depuis le fichier M3U
+                const resolution = variant.info.match(/RESOLUTION=(\d+x\d+)/);
+                const resolutionText = resolution ? resolution[1] : 'HD'; // Valeur par défaut 'HD' si aucune résolution n'est trouvée
+
+                return {
+                    title: `${channel.name} ${resolutionText}`,
+                    url: variant.url,
+                    quality: 'HD',
+                    isM3U8: true,
+                };
+            });
 
             return { streams };
         }
