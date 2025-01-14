@@ -21,7 +21,7 @@ const addon = new addonBuilder({
     id: 'stremio-tnt.fr',
     name: 'TNT Française',
     version: '0.0.6',
-    description: 'Chaînes de la TNT Française (https://github.com/schumijo/iptv/blob/main/fr.m3u8)',
+    description: 'Chaînes de la TNT Française',
     resources: ['catalog', 'meta', 'stream'],
     types: ['tv'],
     catalogs: [{
