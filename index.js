@@ -160,7 +160,14 @@ addon.defineStreamHandler(async (args) => {
     return { streams: [] };
 });
 
-// Serve the addon
-serveHTTP(addon.getInterface(), { port: PORT });
+// Serve Add-on on Port 3000
+app.get('/manifest.json', (req, res) => {
+    const manifest = addon.getInterface();
+    console.log(manifest);
+    res.setHeader('Content-Type', 'application/json');
+    res.json(manifest);
+});
+
+serveHTTP(addon.getInterface(), { server: app, path: '/manifest.json', port: PORT });
 
 console.log(`Stremio addon is running on port ${PORT}`);
