@@ -5,7 +5,7 @@ const axios = require('axios');
 
 const PORT = process.env.PORT || 3000;
 
-// Configuration pour vos chaînes IPTV (ajustée pour les chaînes que vous avez fournies)
+// Configuration pour vos chaînes IPTV
 let config = {
     includeLanguages: [], // Ajouter des langues si nécessaire
     includeCountries: ['FR'], // Inclure le pays de vos chaînes
