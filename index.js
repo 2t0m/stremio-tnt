@@ -5,14 +5,8 @@ const axios = require('axios');
 
 const PORT = process.env.PORT || 3000;
 
-// Configuration pour vos chaînes IPTV
-let config = {
-    includeLanguages: [], // Ajouter des langues si nécessaire
-    includeCountries: ['FR'], // Inclure le pays de vos chaînes
-    excludeLanguages: [],
-    excludeCountries: [],
-    excludeCategories: [],
-};
+// URL du fichier M3U avec toutes les chaînes IPTV
+const m3uUrl = 'https://raw.githubusercontent.com/schumijo/iptv/main/fr.m3u8';
 
 const app = express();
 app.use(cors({
@@ -21,11 +15,6 @@ app.use(cors({
     optionsSuccessStatus: 204
 }));
 app.use(express.json());
-
-// Serve index.html file from root directory
-app.get('/', (req, res) => {
-    res.sendFile(__dirname + '/index.html');
-});
 
 // Addon Manifest
 const addon = new addonBuilder({
@@ -48,58 +37,54 @@ const addon = new addonBuilder({
     background: "https://dl.strem.io/addon-background.jpg",
 });
 
-// Liste des chaînes disponibles avec les flux que vous avez fournis
-const channels = [
-    { 
-        "id": "TF1.fr", 
-        "name": "TF1", 
-        "logo": "https://raw.githubusercontent.com/tv-logo/tv-logos/main/countries/france/tf1-fr.png", 
-        "url": "https://raw.githubusercontent.com/schumijo/iptv/main/playlists/mytf1/tf1.m3u8"
-    },
-    { 
-        "id": "France2.fr", 
-        "name": "France 2", 
-        "logo": "https://raw.githubusercontent.com/tv-logo/tv-logos/main/countries/france/france-2-fr.png", 
-        "url": "https://raw.githubusercontent.com/ipstreet312/freeiptv/master/ressources/ftv/py/fr2.m3u8"
-    },
-    { 
-        "id": "France3.fr", 
-        "name": "France 3", 
-        "logo": "https://raw.githubusercontent.com/tv-logo/tv-logos/main/countries/france/france-3-fr.png", 
-        "url": "https://raw.githubusercontent.com/ipstreet312/freeiptv/master/ressources/ftv/py/fr3.m3u8"
-    },
-    { 
-        "id": "CanalPlus.fr", 
-        "name": "Canal+", 
-        "logo": "https://raw.githubusercontent.com/tv-logo/tv-logos/main/countries/france/canal-plus-fr.png", 
-        "url": "https://hls-m007-live-aka-canalplus.akamaized.net/live/disk/canalplusclair-hd/hls-v3-hd-clair/canalplusclair-hd.m3u8"
-    },
-    { 
-        "id": "France5.fr", 
-        "name": "France 5", 
-        "logo": "https://raw.githubusercontent.com/tv-logo/tv-logos/main/countries/france/france-5-fr.png", 
-        "url": "https://raw.githubusercontent.com/ipstreet312/freeiptv/master/ressources/ftv/py/fr5.m3u8"
-    },
-    { 
-        "id": "M6.fr", 
-        "name": "M6", 
-        "logo": "https://raw.githubusercontent.com/tv-logo/tv-logos/main/countries/france/m6-fr.png", 
-        "url": "https://tntendirect.com/m6/live/playlist.m3u8"
-    },
-    { 
-        "id": "Arte.fr", 
-        "name": "Arte", 
-        "logo": "https://raw.githubusercontent.com/tv-logo/tv-logos/main/countries/france/arte-fr.png", 
-        "url": "https://artesimulcast.akamaized.net/hls/live/2031003/artelive_fr/index.m3u8"
-    },
-    { 
-        "id": "C8.fr", 
-        "name": "C8", 
-        "logo": "https://raw.githubusercontent.com/tv-logo/tv-logos/main/countries/france/c8-fr.png", 
-        "url": "https://raw.githubusercontent.com/schumijo/iptv/main/playlists/canalplus/c8.m3u8"
-    },
-    // Ajoutez plus de chaînes de la même manière...
-];
+// Fonction pour récupérer les données M3U depuis l'URL
+async function fetchM3UData(url) {
+    try {
+        const response = await axios.get(url);
+        return response.data.split('\n'); // Divise le fichier M3U en lignes
+    } catch (error) {
+        console.error('Erreur lors du téléchargement du fichier M3U:', error);
+        return [];
+    }
+}
+
+// Fonction pour extraire les chaînes et variantes du fichier M3U
+async function extractChannelsFromM3U() {
+    const m3uData = await fetchM3UData(m3uUrl);
+    const channels = [];
+    let currentChannel = null;
+
+    for (let i = 0; i < m3uData.length; i++) {
+        const line = m3uData[i].trim();
+
+        // Recherche d'une nouvelle chaîne (#EXTINF)
+        if (line.startsWith('#EXTINF:')) {
+            // Si une chaîne précédente existe, l'ajouter aux chaînes
+            if (currentChannel) {
+                channels.push(currentChannel);
+            }
+
+            // Nouveau channel
+            const channelInfo = line.split(',');
+            const channelName = channelInfo[1]; // Le nom de la chaîne
+            const channelUrl = m3uData[i + 1].trim(); // URL du flux
+
+            currentChannel = {
+                id: channelName.replace(/\s+/g, '-').toLowerCase(),
+                name: channelName,
+                url: channelUrl,
+                logo: `https://raw.githubusercontent.com/tv-logo/tv-logos/main/countries/france/${channelName.toLowerCase().replace(/\s+/g, '-')}-fr.png`,
+            };
+        }
+    }
+
+    // Ajouter la dernière chaîne si elle existe
+    if (currentChannel) {
+        channels.push(currentChannel);
+    }
+
+    return channels;
+}
 
 // Convertir la chaîne en un objet Meta accepté par Stremio
 const toMeta = (channel) => ({
@@ -116,8 +101,33 @@ const toMeta = (channel) => ({
 
 // Fonction pour obtenir les chaînes filtrées en fonction de la configuration
 const getChannels = async () => {
+    const channels = await extractChannelsFromM3U();
     return channels.map((channel) => toMeta(channel));
 };
+
+// Fonction pour récupérer les variantes depuis le M3U
+async function fetchVariants(m3uUrl) {
+    try {
+        const response = await axios.get(m3uUrl);
+        const m3uData = response.data.split('\n');
+        const variants = [];
+
+        for (let i = 0; i < m3uData.length; i++) {
+            if (m3uData[i].startsWith('#EXT-X-STREAM-INF')) {
+                const url = m3uData[i + 1];
+                const variant = {
+                    info: m3uData[i],
+                    url: url,
+                };
+                variants.push(variant);
+            }
+        }
+        return variants;
+    } catch (error) {
+        console.error("Erreur lors de la récupération des variantes M3U:", error);
+        return [];
+    }
+}
 
 // Handler pour le catalogue
 addon.defineCatalogHandler(async (args) => {
@@ -132,6 +142,7 @@ addon.defineCatalogHandler(async (args) => {
 addon.defineMetaHandler(async (args) => {
     if (args.type === 'tv' && args.id.startsWith('iptv-')) {
         const channelID = args.id.split('iptv-')[1];
+        const channels = await extractChannelsFromM3U();
         const channel = channels.find(c => c.id === channelID);
         if (channel) {
             const meta = toMeta(channel);
@@ -145,16 +156,18 @@ addon.defineMetaHandler(async (args) => {
 addon.defineStreamHandler(async (args) => {
     if (args.type === 'tv' && args.id.startsWith('iptv-')) {
         const channelID = args.id.split('iptv-')[1];
+        const channels = await extractChannelsFromM3U();
         const channel = channels.find(c => c.id === channelID);
         if (channel) {
-            return {
-                streams: [{ 
-                    title: channel.name,
-                    url: channel.url,
-                    quality: 'HD', 
-                    isM3U8: true 
-                }]
-            };
+            const variants = await fetchVariants(channel.url);
+            const streams = variants.map((variant) => ({
+                title: `${channel.name} (${variant.info})`,
+                url: variant.url,
+                quality: 'HD',
+                isM3U8: true,
+            }));
+
+            return { streams };
         }
     }
     return { streams: [] };
