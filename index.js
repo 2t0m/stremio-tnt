@@ -32,15 +32,12 @@ const addon = new addonBuilder({
     }],
     idPrefixes: ['iptv-'],
     behaviorHints: { configurable: false, configurationRequired: false },
-<<<<<<< HEAD
     logo: null,
     icon: null,
     background: null,
-=======
     logo: "https://dl.strem.io/addon-logo.png",
     icon: "https://dl.strem.io/addon-logo.png",
     background: "https://dl.strem.io/addon-background.jpg",
->>>>>>> 6a351f388fb325589ab27fdb3ba7e325ff2f7ff3
 });
 
 // Fonction pour récupérer les données M3U depuis l'URL
