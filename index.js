@@ -162,12 +162,18 @@ addon.defineStreamHandler(async (args) => {
 
 // Route pour le manifest
 app.get('/manifest.json', (req, res) => {
-    const manifest = addon.getInterface();
-    res.setHeader('Content-Type', 'application/json');
-    res.json(manifest);
+    try {
+        const manifest = addon.getInterface();
+        console.log("Manifest created successfully.");
+        res.setHeader('Content-Type', 'application/json');
+        res.json(manifest);
+    } catch (error) {
+        console.error("Error generating manifest:", error);
+        res.status(500).send({ error: "Internal Server Error" });
+    }
 });
 
 // Serve Add-on on Port 3000
-serveHTTP(addon.getInterface(), { server: app, path: '/manifest.json' });
+serveHTTP(addon.getInterface(), { server: app, path: '/manifest.json', port: PORT });
 
 console.log(`Stremio addon is running.`);
