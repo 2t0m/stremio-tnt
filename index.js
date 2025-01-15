@@ -42,7 +42,7 @@ let cachedChannels = null;
 
 // Ordre des chaînes de la TNT Française
 const tntOrder = [
-    'TF1', 'France 2', 'France 3', 'Canal+', 'France 5', 'M6', 'Arte', 'C8', 'W9', 'TMC', 
+    'TF1', 'France 2', 'France 3', 'Canal+', 'France 5', 'M6', 'Arte', 'C8', 'W9', 'TMC',
     'NRJ 12', 'LCP', 'France 4', 'BFM TV', 'CNews', 'Gulli', 'France Ô', 'L’Équipe', 'Chérie 25'
 ];
 
@@ -208,6 +208,13 @@ app.get('/manifest.json', (req, res) => {
     res.setHeader('Content-Type', 'application/json');
     res.json(manifest);
 });
+
+// Rafraîchissement du cache toutes les heures
+setInterval(() => {
+    console.log('Vider le cache des chaînes et redémarrer l\'extraction.');
+    cachedChannels = null;  // Vider le cache
+    extractChannelsFromM3U(); // Relancer l'extraction des chaînes
+}, 3600000);  // 3600000 ms = 1 heure
 
 // Serve Add-on on Port 3000
 serveHTTP(addon.getInterface(), { server: app, path: '/manifest.json', port: PORT });
