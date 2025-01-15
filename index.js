@@ -2,12 +2,13 @@ const express = require('express');
 const cors = require('cors');
 const { addonBuilder, serveHTTP } = require('stremio-addon-sdk');
 const axios = require('axios');
+const fs = require('fs');
 const path = require('path');
 
 const PORT = process.env.PORT || 3000;
 
-// URL du fichier M3U avec toutes les chaînes IPTV
-const m3uUrl = 'https://raw.githubusercontent.com/schumijo/iptv/main/fr.m3u8';
+// URL du fichier M3U avec toutes les chaînes IPTV (mis à jour avec le nouveau lien)
+const m3uUrl = 'https://raw.githubusercontent.com/AbedAmine/test/8b6078620f7cbb4cb96b1e8716b36f71b55e32b9/file.m3u';
 
 const app = express();
 app.use(cors({
@@ -38,9 +39,8 @@ const addon = new addonBuilder({
     background: "https://dl.strem.io/addon-background.jpg",
 });
 
-// Cache pour stocker les chaînes extraites et les flux M3U8 modifiés
+// Cache pour stocker les chaînes extraites
 let cachedChannels = null;
-let m3u8Cache = {};
 
 // Fonction pour récupérer les données M3U depuis l'URL
 async function fetchM3UData(url) {
@@ -57,7 +57,7 @@ async function fetchM3UData(url) {
 async function extractChannelsFromM3U() {
     if (cachedChannels) {
         console.log('Utilisation du cache pour les chaînes.');
-        return cachedChannels;
+        return cachedChannels; // Si les chaînes sont déjà extraites, on utilise le cache
     }
 
     console.log('Extraction des chaînes M3U...');
@@ -70,19 +70,26 @@ async function extractChannelsFromM3U() {
 
         // Recherche d'une nouvelle chaîne (#EXTINF)
         if (line.startsWith('#EXTINF:')) {
+            // Si une chaîne précédente existe, l'ajouter aux chaînes
             if (currentChannel) {
                 channels.push(currentChannel);
             }
 
+            // Nouveau channel
             const channelInfo = line.split(',');
             const channelName = channelInfo[1]; // Le nom de la chaîne
             const channelUrl = m3uData[i + 1]?.trim(); // URL du flux (ligne suivante)
+
+            // Extraction de l'URL de l'icône si elle est présente
+            const logoMatch = line.match(/tvg-logo="([^"]+)"/);
+            const logoUrl = logoMatch ? logoMatch[1] : null;
 
             if (channelUrl && channelUrl.endsWith('.m3u8')) { // Vérifie que c'est un flux m3u8
                 currentChannel = {
                     id: channelName.replace(/\s+/g, '-').toLowerCase(),
                     name: channelName,
                     url: channelUrl,
+                    logo: logoUrl, // Ajouter l'URL du logo
                 };
             } else {
                 currentChannel = null; // Ignore les chaînes sans flux valide
@@ -90,11 +97,12 @@ async function extractChannelsFromM3U() {
         }
     }
 
+    // Ajouter la dernière chaîne si elle existe
     if (currentChannel) {
         channels.push(currentChannel);
     }
 
-    cachedChannels = channels;
+    cachedChannels = channels; // Mise en cache des chaînes extraites
     console.log(`Extraction terminée, ${channels.length} chaînes trouvées.`);
     return channels;
 }
@@ -104,11 +112,11 @@ const toMeta = (channel) => ({
     id: `iptv-${channel.id}`,
     name: channel.name,
     type: 'tv',
-    genres: ['general'],
-    poster: null,
+    genres: ['general'], // Catégorie par défaut, ajustez si nécessaire
+    poster: null, // Pas d'affichage des logos
     posterShape: 'square',
     background: null,
-    logo: null,
+    logo: channel.logo || null, // Utiliser le logo de la chaîne s'il est présent
     description: `Chaîne en direct : ${channel.name}`,
 });
 
@@ -117,63 +125,6 @@ const getChannels = async () => {
     const channels = await extractChannelsFromM3U();
     return channels.map((channel) => toMeta(channel));
 };
-
-// Fonction pour garder le flux vidéo de la meilleure résolution et commenter les plus faibles, y compris les URLs
-async function keepBestResolutionStream(lines) {
-    const videoStreams = [];
-    let currentStream = null;
-
-    lines.forEach((line, index) => {
-        if (line.trim().startsWith('#EXT-X-STREAM-INF')) {
-            const resolutionMatch = line.match(/RESOLUTION=(\d+x\d+)/);
-            if (resolutionMatch) {
-                const resolution = resolutionMatch[1];
-                videoStreams.push({ index, resolution });
-            }
-        }
-    });
-
-    const sortedStreams = videoStreams.sort((a, b) => {
-        const [widthA, heightA] = a.resolution.split('x').map(Number);
-        const [widthB, heightB] = b.resolution.split('x').map(Number);
-        return widthB * heightB - widthA * heightA;
-    });
-
-    const bestResolution = sortedStreams[0].resolution;
-    const filteredLines = lines.map((line, index) => {
-        if (line.trim().startsWith('#EXT-X-STREAM-INF')) {
-            const resolutionMatch = line.match(/RESOLUTION=(\d+x\d+)/);
-            if (resolutionMatch) {
-                const resolution = resolutionMatch[1];
-                if (resolution !== bestResolution) {
-                    const urlLine = lines[index + 1].trim();
-                    return [
-                        `# COMMENTED: ${line}`,
-                        `# COMMENTED: ${urlLine}`,
-                    ].join('\n');
-                }
-            }
-        }
-        return line;
-    });
-
-    return filteredLines.join('\n');
-}
-
-// Fonction pour récupérer un M3U8 en mémoire
-async function getM3U8(channelName, url) {
-    if (m3u8Cache[channelName]) {
-        console.log(`Flux M3U8 pour ${channelName} déjà en mémoire.`);
-        return m3u8Cache[channelName];
-    }
-
-    console.log(`Téléchargement et modification du M3U8 pour ${channelName}...`);
-    const m3uData = await fetchM3UData(url);
-    const modifiedM3U8 = await keepBestResolutionStream(m3uData);
-
-    m3u8Cache[channelName] = modifiedM3U8;
-    return modifiedM3U8;
-}
 
 // Handler pour le catalogue
 addon.defineCatalogHandler(async (args) => {
@@ -202,7 +153,7 @@ addon.defineMetaHandler(async (args) => {
     return { meta: {} };
 });
 
-// Handler pour les flux
+// Handler pour les flux (un seul flux m3u8 par chaîne)
 addon.defineStreamHandler(async (args) => {
     console.log(`Requête de flux reçue pour ${args.id}`);
 
@@ -212,15 +163,15 @@ addon.defineStreamHandler(async (args) => {
         const channel = channels.find(c => c.id === channelID);
 
         if (channel) {
-            const m3u8Content = await getM3U8(channel.name, channel.url);
-
+            // Retourner directement les flux sans compter les flux vidéo
+            console.log(`Retour du flux M3U8 pour la chaîne ${channel.name}: ${channel.url}`);
             return {
                 streams: [
                     {
-                        title: channel.name,
-                        url: `data:application/vnd.apple.mpegurl;base64,${Buffer.from(m3u8Content).toString('base64')}`,
-                        quality: 'HD',
-                        isM3U8: true,
+                        title: channel.name, // Nom de la chaîne
+                        url: channel.url, // URL du flux principal
+                        quality: 'HD', // Tu peux ajuster si nécessaire
+                        isM3U8: true, // Indiquer qu'il s'agit d'un flux M3U8
                     }
                 ],
             };
@@ -233,6 +184,7 @@ addon.defineStreamHandler(async (args) => {
 // Route pour le manifest
 app.get('/manifest.json', (req, res) => {
     const manifest = addon.getInterface();
+    console.log('Manifest retourné:', manifest); // Pour voir ce qui est retourné
     res.setHeader('Content-Type', 'application/json');
     res.json(manifest);
 });
