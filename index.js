@@ -2,11 +2,30 @@ const express = require('express');
 const cors = require('cors');
 const { addonBuilder, serveHTTP } = require('stremio-addon-sdk');
 const axios = require('axios');
+const fs = require('fs');
+const path = require('path');
 
 const PORT = process.env.PORT || 3000;
 
 // URL du fichier M3U avec toutes les chaînes IPTV
 const m3uUrl = 'https://raw.githubusercontent.com/schumijo/iptv/main/fr.m3u8';
+
+// Répertoires pour stocker les fichiers
+const logsDir = path.join(__dirname, 'logs');
+const streamsDir = path.join(__dirname, 'streams');
+
+// Création des répertoires nécessaires
+if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir);
+if (!fs.existsSync(streamsDir)) fs.mkdirSync(streamsDir);
+
+// Initialisation du journal
+const logFilePath = path.join(logsDir, 'stremio.log');
+function log(message) {
+    const timestamp = new Date().toISOString();
+    const logMessage = `[${timestamp}] ${message}\n`;
+    fs.appendFileSync(logFilePath, logMessage);
+    console.log(logMessage.trim());
+}
 
 const app = express();
 app.use(cors({
@@ -20,7 +39,7 @@ app.use(express.json());
 const addon = new addonBuilder({
     id: 'stremio-tnt.fr',
     name: 'TNT Française',
-    version: '0.0.6',
+    version: '0.0.7',
     description: 'Chaînes de la TNT Française',
     resources: ['catalog', 'meta', 'stream'],
     types: ['tv'],
@@ -39,7 +58,6 @@ const addon = new addonBuilder({
 
 // Cache pour stocker les chaînes extraites
 let cachedChannels = null;
-const m3u8Cache = {}; // Stockage en mémoire des fichiers M3U8 modifiés
 
 // Fonction pour récupérer les données M3U depuis l'URL
 async function fetchM3UData(url) {
@@ -47,7 +65,7 @@ async function fetchM3UData(url) {
         const response = await axios.get(url);
         return response.data.split('\n'); // Divise le fichier M3U en lignes
     } catch (error) {
-        console.error('Erreur lors du téléchargement du fichier M3U:', error);
+        log(`Erreur lors du téléchargement du fichier M3U: ${error.message}`);
         return [];
     }
 }
@@ -55,11 +73,11 @@ async function fetchM3UData(url) {
 // Fonction pour extraire les chaînes du fichier M3U
 async function extractChannelsFromM3U() {
     if (cachedChannels) {
-        console.log('Utilisation du cache pour les chaînes.');
+        log('Utilisation du cache pour les chaînes.');
         return cachedChannels;
     }
 
-    console.log('Extraction des chaînes M3U...');
+    log('Extraction des chaînes M3U...');
     const m3uData = await fetchM3UData(m3uUrl);
     const channels = [];
     let currentChannel = null;
@@ -93,7 +111,7 @@ async function extractChannelsFromM3U() {
     }
 
     cachedChannels = channels;
-    console.log(`Extraction terminée, ${channels.length} chaînes trouvées.`);
+    log(`Extraction terminée, ${channels.length} chaînes trouvées.`);
     return channels;
 }
 
@@ -110,98 +128,79 @@ const toMeta = (channel) => ({
     description: `Chaîne en direct : ${channel.name}`,
 });
 
-// Fonction pour modifier un fichier M3U8 pour ne conserver que le flux de la meilleure résolution
-async function getBestResolutionM3U8(url) {
-    if (m3u8Cache[url]) {
-        console.log(`M3U8 en cache pour ${url}`);
-        return m3u8Cache[url];
-    }
-
+// Fonction pour télécharger un fichier M3U8 localement
+async function downloadM3U8(url, channelName) {
     try {
-        const m3uData = await fetchM3UData(url);
-        const videoStreams = [];
-        let modifiedM3U = [];
-
-        m3uData.forEach((line, index) => {
-            if (line.startsWith('#EXT-X-STREAM-INF')) {
-                const resolutionMatch = line.match(/RESOLUTION=(\d+x\d+)/);
-                if (resolutionMatch) {
-                    const resolution = resolutionMatch[1];
-                    videoStreams.push({ index, resolution });
-                }
-            }
-        });
-
-        const sortedStreams = videoStreams.sort((a, b) => {
-            const [widthA, heightA] = a.resolution.split('x').map(Number);
-            const [widthB, heightB] = b.resolution.split('x').map(Number);
-            return widthB * heightB - widthA * heightA;
-        });
-
-        const bestResolution = sortedStreams[0]?.resolution;
-
-        let keepNextLine = false;
-        m3uData.forEach((line) => {
-            if (line.startsWith('#EXT-X-STREAM-INF')) {
-                const resolutionMatch = line.match(/RESOLUTION=(\d+x\d+)/);
-                if (resolutionMatch && resolutionMatch[1] === bestResolution) {
-                    modifiedM3U.push(line);
-                    keepNextLine = true;
-                } else {
-                    keepNextLine = false;
-                }
-            } else if (keepNextLine) {
-                modifiedM3U.push(line);
-            }
-        });
-
-        m3u8Cache[url] = modifiedM3U.join('\n');
-        return m3u8Cache[url];
+        const response = await axios.get(url);
+        const filePath = path.join(streamsDir, `${channelName}.m3u8`);
+        fs.writeFileSync(filePath, response.data);
+        log(`Fichier M3U8 téléchargé pour ${channelName}: ${filePath}`);
     } catch (error) {
-        console.error(`Erreur lors de la modification du fichier M3U8: ${error}`);
-        return '';
+        log(`Erreur lors du téléchargement du fichier M3U8 pour ${channelName}: ${error.message}`);
     }
 }
 
-// Handler pour le catalogue
+// Route pour servir les fichiers modifiés
+app.use('/streams', express.static(streamsDir));
+
+// Handlers Stremio
 addon.defineCatalogHandler(async (args) => {
+    log(`Requête de catalog: ${JSON.stringify(args)}`);
     if (args.type === 'tv' && args.id === 'iptv-channels') {
         const channelList = await extractChannelsFromM3U();
-        return { metas: channelList.map((channel) => toMeta(channel)) };
+        return { metas: channelList.map(toMeta) };
     }
     return { metas: [] };
 });
 
-// Handler pour les métadonnées
 addon.defineMetaHandler(async (args) => {
+    log(`Requête de meta: ${JSON.stringify(args)}`);
     if (args.type === 'tv' && args.id.startsWith('iptv-')) {
         const channelID = args.id.split('iptv-')[1];
         const channels = await extractChannelsFromM3U();
         const channel = channels.find(c => c.id === channelID);
         if (channel) {
-            return { meta: toMeta(channel) };
+            const meta = toMeta(channel);
+            return { meta };
         }
     }
     return { meta: {} };
 });
 
-// Handler pour les flux
 addon.defineStreamHandler(async (args) => {
+    log(`Requête de stream: ${JSON.stringify(args)}`);
     if (args.type === 'tv' && args.id.startsWith('iptv-')) {
         const channelID = args.id.split('iptv-')[1];
         const channels = await extractChannelsFromM3U();
         const channel = channels.find(c => c.id === channelID);
 
         if (channel) {
-            const bestM3U8 = await getBestResolutionM3U8(channel.url);
-            if (bestM3U8) {
+            const localPath = path.join(streamsDir, `${channel.name}.m3u8`);
+
+            // Télécharger le fichier M3U8 si non existant
+            if (!fs.existsSync(localPath)) {
+                await downloadM3U8(channel.url, channel.name);
+            }
+
+            // Retourne le stream local si disponible
+            if (fs.existsSync(localPath)) {
+                return {
+                    streams: [
+                        {
+                            title: `${channel.name} (Local)`,
+                            url: `http://localhost:${PORT}/streams/${encodeURIComponent(channel.name)}.m3u8`,
+                            isFree: true,
+                        },
+                    ],
+                };
+            } else {
                 return {
                     streams: [
                         {
                             title: channel.name,
-                            url: `data:application/vnd.apple.mpegurl;base64,${Buffer.from(bestM3U8).toString('base64')}`,
-                            isM3U8: true,
-                        }
+                            url: channel.url,
+                            isFree: true,
+                        },
                     ],
                 };
             }
@@ -210,11 +209,6 @@ addon.defineStreamHandler(async (args) => {
     return { streams: [] };
 });
 
-// Route pour le manifest
-app.get('/manifest.json', (req, res) => {
-    res.json(addon.getInterface());
-});
-
-// Démarrer le serveur
+// Lancer le serveur Stremio
 serveHTTP(addon.getInterface(), { server: app, path: '/manifest.json', port: PORT });
-console.log(`Stremio addon is running on port ${PORT}`);
+log(`Stremio addon is running on http://localhost:${PORT}`);
