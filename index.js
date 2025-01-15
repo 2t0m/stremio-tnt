@@ -7,7 +7,7 @@ const path = require('path');
 
 const PORT = process.env.PORT || 3000;
 
-// URL du fichier M3U avec toutes les chaînes IPTV (mis à jour avec le nouveau lien)
+// URL du fichier M3U avec toutes les chaînes IPTV (mis à jour avec le lien)
 const m3uUrl = 'https://raw.githubusercontent.com/AbedAmine/test/8b6078620f7cbb4cb96b1e8716b36f71b55e32b9/file.m3u';
 
 const app = express();
@@ -84,7 +84,7 @@ async function extractChannelsFromM3U() {
             const logoMatch = line.match(/tvg-logo="([^"]+)"/);
             const logoUrl = logoMatch ? logoMatch[1] : null;
 
-            if (channelUrl && channelUrl.endsWith('.m3u8')) { // Vérifie que c'est un flux m3u8
+            if (channelUrl && channelUrl.endsWith('.m3u8') && isTntChannel(channelName)) { // Vérifie que c'est un flux m3u8 et que c'est une chaîne TNT
                 currentChannel = {
                     id: channelName.replace(/\s+/g, '-').toLowerCase(),
                     name: channelName,
@@ -92,7 +92,7 @@ async function extractChannelsFromM3U() {
                     logo: logoUrl, // Ajouter l'URL du logo
                 };
             } else {
-                currentChannel = null; // Ignore les chaînes sans flux valide
+                currentChannel = null; // Ignore les chaînes sans flux valide ou non TNT
             }
         }
     }
@@ -107,16 +107,22 @@ async function extractChannelsFromM3U() {
     return channels;
 }
 
+// Fonction pour déterminer si une chaîne est de la TNT française
+function isTntChannel(channelName) {
+    const tntKeywords = ['TF1', 'France', 'M6', 'C8', 'TMC', 'W9', 'NRJ12', 'LCP', 'France 2', 'France 3'];
+    return tntKeywords.some(keyword => channelName.toLowerCase().includes(keyword.toLowerCase()));
+}
+
 // Convertir la chaîne en un objet Meta accepté par Stremio
 const toMeta = (channel) => ({
     id: `iptv-${channel.id}`,
     name: channel.name,
     type: 'tv',
     genres: ['general'], // Catégorie par défaut, ajustez si nécessaire
-    poster: null, // Pas d'affichage des logos
+    poster: null, // Pas d'affichage des logos ici
     posterShape: 'square',
     background: null,
-    logo: channel.logo || null, // Utiliser le logo de la chaîne s'il est présent
+    logo: channel.logo ? channel.logo : 'https://via.placeholder.com/200x200?text=Logo', // Utiliser un logo par défaut si aucun n'est trouvé
     description: `Chaîne en direct : ${channel.name}`,
 });
 
