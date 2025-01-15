@@ -2,8 +2,6 @@ const express = require('express');
 const cors = require('cors');
 const { addonBuilder, serveHTTP } = require('stremio-addon-sdk');
 const axios = require('axios');
-const fs = require('fs');
-const path = require('path');
 
 const PORT = process.env.PORT || 3000;
 
@@ -41,6 +39,12 @@ const addon = new addonBuilder({
 
 // Cache pour stocker les chaînes extraites
 let cachedChannels = null;
+
+// Ordre des chaînes de la TNT Française
+const tntOrder = [
+    'TF1', 'France 2', 'France 3', 'Canal+', 'France 5', 'M6', 'Arte', 'C8', 'W9', 'TMC', 
+    'NRJ 12', 'LCP', 'France 4', 'BFM TV', 'CNews', 'Gulli', 'France Ô', 'L’Équipe', 'Chérie 25'
+];
 
 // Fonction pour récupérer les données M3U depuis l'URL
 async function fetchM3UData(url) {
@@ -101,6 +105,18 @@ async function extractChannelsFromM3U() {
     if (currentChannel) {
         channels.push(currentChannel);
     }
+
+    // Tri des chaînes selon l'ordre de la TNT
+    channels.sort((a, b) => {
+        const indexA = tntOrder.indexOf(a.name);
+        const indexB = tntOrder.indexOf(b.name);
+
+        // Si une chaîne n'est pas dans le tableau tntOrder, on la met à la fin
+        if (indexA === -1) return 1;
+        if (indexB === -1) return -1;
+
+        return indexA - indexB;
+    });
 
     cachedChannels = channels; // Mise en cache des chaînes extraites
     console.log(`Extraction terminée, ${channels.length} chaînes trouvées.`);
@@ -169,7 +185,6 @@ addon.defineStreamHandler(async (args) => {
         const channel = channels.find(c => c.id === channelID);
 
         if (channel) {
-            // Retourner directement les flux sans compter les flux vidéo
             console.log(`Retour du flux M3U8 pour la chaîne ${channel.name}: ${channel.url}`);
             return {
                 streams: [
@@ -190,7 +205,6 @@ addon.defineStreamHandler(async (args) => {
 // Route pour le manifest
 app.get('/manifest.json', (req, res) => {
     const manifest = addon.getInterface();
-    console.log('Manifest retourné:', manifest); // Pour voir ce qui est retourné
     res.setHeader('Content-Type', 'application/json');
     res.json(manifest);
 });
