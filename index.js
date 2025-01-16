@@ -6,7 +6,7 @@ const axios = require('axios');
 const PORT = process.env.PORT || 3000;
 
 // URL du fichier M3U avec toutes les chaînes IPTV (mis à jour avec le lien)
-const m3uUrl = 'https://raw.githubusercontent.com/AbedAmine/test/8b6078620f7cbb4cb96b1e8716b36f71b55e32b9/file.m3u';
+const m3uUrl = 'https://raw.githubusercontent.com/Paradise-91/ParaTV/refs/heads/main/playlists/paratv/main/paratv.m3u';
 
 const app = express();
 app.use(cors({
@@ -21,7 +21,7 @@ const addon = new addonBuilder({
     id: 'stremio-tnt.fr',
     name: 'TNT Française',
     version: '0.0.6',
-    description: 'Chaînes de la TNT Française',
+    description: 'Chaînes de la TNT Française issues des flux de https://github.com/Paradise-91/ParaTV',
     resources: ['catalog', 'meta', 'stream'],
     types: ['tv'],
     catalogs: [{
@@ -40,12 +40,6 @@ const addon = new addonBuilder({
 // Cache pour stocker les chaînes extraites
 let cachedChannels = null;
 
-// Ordre des chaînes de la TNT Française
-const tntOrder = [
-    'TF1', 'France 2', 'France 3', 'Canal+', 'France 5', 'M6', 'Arte', 'C8', 'W9', 'TMC',
-    'NRJ 12', 'LCP', 'France 4', 'BFM TV', 'CNews', 'Gulli', 'France Ô', 'L’Équipe', 'Chérie 25'
-];
-
 // Fonction pour récupérer les données M3U depuis l'URL
 async function fetchM3UData(url) {
     try {
@@ -55,6 +49,12 @@ async function fetchM3UData(url) {
         console.error('Erreur lors du téléchargement du fichier M3U:', error);
         return [];
     }
+}
+
+// Fonction pour déterminer si une chaîne est de la TNT française (de 1. à 27.)
+function isTntChannel(channelName) {
+    const tntRegex = /^(?:[1-9]|1[0-9]|2[0-7])\.\s/; // Regex pour matcher '1.' à '27.'
+    return tntRegex.test(channelName);
 }
 
 // Fonction pour extraire les chaînes du fichier M3U
@@ -106,27 +106,11 @@ async function extractChannelsFromM3U() {
         channels.push(currentChannel);
     }
 
-    // Tri des chaînes selon l'ordre de la TNT
-    channels.sort((a, b) => {
-        const indexA = tntOrder.indexOf(a.name);
-        const indexB = tntOrder.indexOf(b.name);
-
-        // Si une chaîne n'est pas dans le tableau tntOrder, on la met à la fin
-        if (indexA === -1) return 1;
-        if (indexB === -1) return -1;
-
-        return indexA - indexB;
-    });
-
-    cachedChannels = channels; // Mise en cache des chaînes extraites
-    console.log(`Extraction terminée, ${channels.length} chaînes trouvées.`);
-    return channels;
-}
-
-// Fonction pour déterminer si une chaîne est de la TNT française
-function isTntChannel(channelName) {
-    const tntKeywords = ['TF1', 'France', 'M6', 'C8', 'TMC', 'W9', 'NRJ12', 'LCP', 'France 2', 'France 3'];
-    return tntKeywords.some(keyword => channelName.toLowerCase().includes(keyword.toLowerCase()));
+    // Filtrer uniquement les chaînes de 1. à 27.
+    const filteredChannels = channels.filter(channel => isTntChannel(channel.name));
+    cachedChannels = filteredChannels; // Mise en cache des chaînes extraites
+    console.log(`Extraction terminée, ${filteredChannels.length} chaînes trouvées.`);
+    return filteredChannels;
 }
 
 // Convertir la chaîne en un objet Meta accepté par Stremio
